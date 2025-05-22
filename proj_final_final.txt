@@ -1,0 +1,485 @@
+% Create Synthetic Fake Notes, Extract Features, Train, and Evaluate with Localized Modifications
+clc; clear; close all;
+
+% Step 1: Create Synthetic Fake Notes with Localized Pixel Value Modifications
+disp('Step 1: Creating Synthetic Fake Notes with Localized Pixel Value Modifications...');
+
+% Define input folder (original images)
+inputBaseFolder = 'Dataset/';
+
+% List of denominations and sides
+denominations = {'50Rs', '100Rs', '200Rs', '500Rs'};
+sides = {'Front', 'Back'};
+
+% Number of fake notes to create per denomination per side
+numFakeNotes = 15;
+
+% Official widths of the notes (in mm) for DPI calculation
+officialWidths = struct('Rs50', 135, 'Rs100', 142, 'Rs200', 146, 'Rs500', 150);
+
+% Loop through each denomination and side
+for d = 1:length(denominations)
+    for s = 1:length(sides)
+        % Define the input folder (Real) for the current denomination and side
+        inputFolder = fullfile(inputBaseFolder, 'Real', denominations{d}, sides{s});
+        
+        % Define the output folder (Fake) for the current denomination and side
+        outputFolder = fullfile(inputBaseFolder, 'Fake', denominations{d}, sides{s});
+        
+        % Create the output folder if it doesn't exist
+        if ~exist(outputFolder, 'dir')
+            mkdir(outputFolder);
+            fprintf('Created output folder: %s\n', outputFolder);
+        end
+        
+        % Check if the input folder exists
+        if ~exist(inputFolder, 'dir')
+            fprintf('Input folder not found: %s\n', inputFolder);
+            continue;
+        end
+        
+        % Get list of all image files in the input folder
+        imageFiles = dir(fullfile(inputFolder, '*.jpg'));
+        
+        % Skip if no images are found in the folder
+        if isempty(imageFiles)
+            fprintf('No images found in %s\n', inputFolder);
+            continue;
+        end
+        
+        % Limit to the first 15 images for creating fake notes
+        numImagesToProcess = min(numFakeNotes, length(imageFiles));
+        
+        % Loop through the first 15 images to create synthetic fake versions
+        for i = 1:numImagesToProcess
+            % Read the real image
+            realImgPath = fullfile(inputFolder, imageFiles(i).name);
+            realImg = imread(realImgPath);
+            
+            % Calculate DPI for this image
+            [~, width, ~] = size(realImg);
+            denom = ['Rs' denominations{d}(1:end-2)];
+            physicalWidthMM = officialWidths.(denom);
+            physicalWidthInches = physicalWidthMM / 25.4;
+            dpi = width / physicalWidthInches;
+            pixelsPerMM = dpi / 25.4;
+            fprintf('Calculated DPI for %s: %.2f\n', realImgPath, dpi);
+            
+            % Define regions for modification (in pixels, based on original image resolution)
+            threadLeft = round(40 * pixelsPerMM);
+            threadRight = round(50 * pixelsPerMM);
+            watermarkLeft = round(30 * pixelsPerMM);
+            watermarkRight = round(60 * pixelsPerMM);
+            microtextLeft = round(80 * pixelsPerMM);
+            microtextRight = round(100 * pixelsPerMM);
+            idMarkLeft = round(100 * pixelsPerMM);
+            idMarkRight = round(120 * pixelsPerMM);
+            
+            % Create a copy of the image to modify
+            fakeImg = realImg;
+            
+            % Get image dimensions
+            [height, width, ~] = size(fakeImg);
+            
+            % Adjust region boundaries to fit within image dimensions
+            threadLeft = min(threadLeft, width);
+            threadRight = min(threadRight, width);
+            watermarkLeft = min(watermarkLeft, width);
+            watermarkRight = min(watermarkRight, width);
+            microtextLeft = min(microtextLeft, width);
+            microtextRight = min(microtextRight, width);
+            idMarkLeft = min(idMarkLeft, width);
+            idMarkRight = min(idMarkRight, width);
+            
+            % Convert to double for pixel value manipulation
+            fakeImgDouble = double(fakeImg);
+            
+            % 1. Modify Security Thread Region (40-50 mm from the left)
+            threadRegion = fakeImgDouble(:, threadLeft:threadRight, :);
+            intensityAdjustment = rand * 20 - 10; % Random adjustment between -10 and 10
+            threadRegion = threadRegion + intensityAdjustment; % Adjust pixel intensities
+            threadRegion = threadRegion + (rand(size(threadRegion)) * 5 - 2.5); % Add subtle random noise
+            threadRegion = max(0, min(255, threadRegion)); % Clip to valid range
+            fakeImgDouble(:, threadLeft:threadRight, :) = threadRegion;
+            
+            % 2. Modify Watermark Region (30-60 mm from the left)
+            watermarkRegion = fakeImgDouble(:, watermarkLeft:watermarkRight, :);
+            intensityAdjustment = rand * 15 - 7.5; % Random adjustment between -7.5 and 7.5
+            watermarkRegion = watermarkRegion + intensityAdjustment;
+            watermarkRegion = watermarkRegion + (rand(size(watermarkRegion)) * 3 - 1.5); % Add subtle random noise
+            watermarkRegion = max(0, min(255, watermarkRegion));
+            fakeImgDouble(:, watermarkLeft:watermarkRight, :) = watermarkRegion;
+            
+            % 3. Modify Microlettering Region (80-100 mm from the left)
+            microtextRegion = fakeImgDouble(:, microtextLeft:microtextRight, :);
+            intensityAdjustment = rand * 10 - 5; % Random adjustment between -5 and 5
+            microtextRegion = microtextRegion + intensityAdjustment;
+            microtextRegion = microtextRegion + (rand(size(microtextRegion)) * 2 - 1); % Add very subtle random noise
+            microtextRegion = max(0, min(255, microtextRegion));
+            fakeImgDouble(:, microtextLeft:microtextRight, :) = microtextRegion;
+            
+            % 4. Modify Identification Mark Region (100-120 mm from the left)
+            idMarkRegion = fakeImgDouble(:, idMarkLeft:idMarkRight, :);
+            intensityAdjustment = rand * 10 - 5; % Random adjustment between -5 and 5
+            idMarkRegion = idMarkRegion + intensityAdjustment;
+            idMarkRegion = idMarkRegion + (rand(size(idMarkRegion)) * 2 - 1); % Add very subtle random noise
+            idMarkRegion = max(0, min(255, idMarkRegion));
+            fakeImgDouble(:, idMarkLeft:idMarkRight, :) = idMarkRegion;
+            
+            % Convert back to uint8
+            fakeImg = uint8(fakeImgDouble);
+            
+            % Save the synthetic fake image
+            fakeImgName = ['fake_' imageFiles(i).name];
+            fakeImgPath = fullfile(outputFolder, fakeImgName);
+            imwrite(fakeImg, fakeImgPath);
+            
+            fprintf('Created fake note: %s -> %s\n', realImgPath, fakeImgPath);
+        end
+    end
+end
+
+disp('Synthetic fake note generation complete!');
+
+% Step 2: Crop Images
+disp('Step 2: Cropping Images...');
+
+% Define input and output base folders
+inputBaseFolder = 'Dataset/';
+outputBaseFolder = 'cropped_images/';
+
+% Create output base folder if it doesn't exist
+if ~exist(outputBaseFolder, 'dir')
+    mkdir(outputBaseFolder);
+end
+
+% List of denominations, sides, and labels
+denominations = {'50Rs', '100Rs', '200Rs', '500Rs'};
+sides = {'Front', 'Back'};
+labelTypes = {'Real', 'Fake'};
+
+% Loop through each label, denomination, and side
+for l = 1:length(labelTypes)
+    for d = 1:length(denominations)
+        for s = 1:length(sides)
+            % Define the input folder for the current denomination, side, and label
+            inputFolder = fullfile(inputBaseFolder, labelTypes{l}, denominations{d}, sides{s});
+            
+            % Define the corresponding output folder (e.g., cropped_images/Real/50Rs/Front/)
+            outputFolder = fullfile(outputBaseFolder, labelTypes{l}, denominations{d}, sides{s});
+            
+            % Create output folder if it doesn't exist
+            if ~exist(outputFolder, 'dir')
+                mkdir(outputFolder);
+            end
+            
+            % Get list of all image files in the input folder
+            imageFiles = dir(fullfile(inputFolder, '*.jpg'));
+            
+            % Skip if no images are found in the folder
+            if isempty(imageFiles)
+                fprintf('No images found in %s\n', inputFolder);
+                continue;
+            end
+            
+            % Loop through each image in the current folder
+            for i = 1:length(imageFiles)
+                % Read the image
+                imgPath = fullfile(inputFolder, imageFiles(i).name);
+                img = imread(imgPath);
+                
+                % Convert to grayscale
+                gray_img = rgb2gray(img);
+                
+                % Edge detection using Canny filter
+                edges = edge(gray_img, 'Canny');
+                
+                % Morphological operations to close gaps
+                se = strel('rectangle', [10, 10]);
+                dilated = imdilate(edges, se);
+                filled = imfill(dilated, 'holes');
+                
+                % Find largest bounding box (assuming the note is the largest object)
+                stats = regionprops(filled, 'BoundingBox', 'Area');
+                
+                if isempty(stats)
+                    fprintf('No objects found in %s\n', imageFiles(i).name);
+                    continue;
+                end
+                
+                [~, idx] = max([stats.Area]);
+                bbox = stats(idx).BoundingBox;
+                
+                % Crop the note from the original image
+                cropped_note = imcrop(img, bbox);
+                
+                % Save the cropped image to the output folder
+                outputPath = fullfile(outputFolder, ['extracted_' imageFiles(i).name]);
+                imwrite(cropped_note, outputPath);
+                
+                fprintf('Processed: %s -> Saved: %s\n', imageFiles(i).name, outputPath);
+            end
+        end
+    end
+end
+
+disp('Cropping complete!');
+
+% Step 3: Scale Images (Preprocessing)
+disp('Step 3: Scaling Images (Preprocessing)...');
+
+% Define input and output base folders
+inputBaseFolder = 'cropped_images/';
+outputBaseFolder = 'pre_processed_photos/';
+
+% Create output base folder if it doesn't exist
+if ~exist(outputBaseFolder, 'dir')
+    mkdir(outputBaseFolder);
+end
+
+% Define target size for resizing (e.g., scale to a common width of 600 pixels)
+targetWidth = 600;
+officialSizes = struct('Rs50', [135, 66], 'Rs100', [142, 66], 'Rs200', [146, 66], 'Rs500', [150, 66]);
+
+% List of denominations, sides, and labels
+denominations = {'50Rs', '100Rs', '200Rs', '500Rs'};
+sides = {'Front', 'Back'};
+labelTypes = {'Real', 'Fake'};
+
+% Loop through each label, denomination, and side
+for l = 1:length(labelTypes)
+    for d = 1:length(denominations)
+        for s = 1:length(sides)
+            % Define the input folder for the current denomination, side, and label
+            inputFolder = fullfile(inputBaseFolder, labelTypes{l}, denominations{d}, sides{s});
+            
+            % Define the corresponding output folder (e.g., pre_processed_photos/Real/50Rs/Front/)
+            outputFolder = fullfile(outputBaseFolder, labelTypes{l}, denominations{d}, sides{s});
+            
+            % Create output folder if it doesn't exist
+            if ~exist(outputFolder, 'dir')
+                mkdir(outputFolder);
+            end
+            
+            % Get list of all image files in the input folder
+            imageFiles = dir(fullfile(inputFolder, '*.jpg'));
+            
+            % Skip if no images are found in the folder
+            if isempty(imageFiles)
+                fprintf('No images found in %s\n', inputFolder);
+                continue;
+            end
+            
+            % Loop through each image in the current folder
+            for i = 1:length(imageFiles)
+                % Read the cropped image
+                imgPath = fullfile(inputFolder, imageFiles(i).name);
+                img = imread(imgPath);
+                
+                % Scale the cropped image
+                denom = ['Rs' denominations{d}(1:end-2)];
+                officialSize = officialSizes.(denom);
+                aspectRatio = officialSize(2) / officialSize(1);
+                targetHeight = round(targetWidth * aspectRatio);
+                scaled_img = imresize(img, [targetHeight, targetWidth]);
+                
+                % Save the scaled image to the output folder
+                outputPath = fullfile(outputFolder, ['scaled_' imageFiles(i).name]);
+                imwrite(scaled_img, outputPath);
+                
+                fprintf('Processed: %s -> Saved: %s\n', imageFiles(i).name, outputPath);
+            end
+        end
+    end
+end
+
+disp('Scaling (preprocessing) complete!');
+
+% Step 4: Feature Extraction with New Feature Vector
+disp('Step 4: Extracting Features with New Feature Vector...');
+
+% Define input folder (scaled images)
+inputBaseFolder = 'pre_processed_photos/';
+
+% Define official sizes for mm-to-pixel conversion
+officialSizes = struct('Rs50', [135, 66], 'Rs100', [142, 66], 'Rs200', [146, 66], 'Rs500', [150, 66]);
+
+% List of denominations, sides (only Front), and labels
+denominations = {'50Rs', '100Rs', '200Rs', '500Rs'};
+sides = {'Front'};
+labelTypes = {'Real', 'Fake'};
+
+% Initialize variables to store features and labels
+allFeatures = [];
+allLabels = [];
+imagePaths = {};
+
+% Loop through each label, denomination, and side (only Front)
+for l = 1:length(labelTypes)
+    for d = 1:length(denominations)
+        for s = 1:length(sides)
+            % Define the input folder for the current label, denomination, and side
+            inputFolder = fullfile(inputBaseFolder, labelTypes{l}, denominations{d}, sides{s});
+            
+            % Get list of all image files in the input folder
+            imageFiles = dir(fullfile(inputFolder, '*.jpg'));
+            
+            % Skip if no images are found in the folder
+            if isempty(imageFiles)
+                fprintf('No images found in %s\n', inputFolder);
+                continue;
+            end
+            
+            % Calculate mmPerPixel for this denomination
+            denom = ['Rs' denominations{d}(1:end-2)];
+            officialSize = officialSizes.(denom);
+            mmPerPixel = officialSize(1) / 600; % Width is 600 pixels after scaling
+            
+            % Define feature regions in pixels
+            threadLeft = round(40 / mmPerPixel);
+            threadRight = round(50 / mmPerPixel);
+            watermarkLeft = round(30 / mmPerPixel);
+            watermarkRight = round(60 / mmPerPixel);
+            microtextLeft = round(80 / mmPerPixel);
+            microtextRight = round(100 / mmPerPixel);
+            idMarkLeft = round(100 / mmPerPixel);
+            idMarkRight = round(120 / mmPerPixel);
+            
+            % Loop through each image in the current folder
+            for i = 1:length(imageFiles)
+                % Read the scaled image
+                imgPath = fullfile(inputFolder, imageFiles(i).name);
+                img = imread(imgPath);
+                
+                % Convert to grayscale
+                gray_img = rgb2gray(img);
+                
+                % Extract features
+                % 1. Security Thread Edge Density
+                threadRegion = gray_img(:, threadLeft:threadRight);
+                threadEdges = edge(threadRegion, 'Canny');
+                threadEdgeDensity = sum(threadEdges(:)) / numel(threadEdges);
+                
+                % 2. Watermark Gradient Magnitude
+                watermarkRegion = gray_img(:, watermarkLeft:watermarkRight);
+                [Gmag, ~] = imgradient(watermarkRegion);
+                watermarkGradient = mean(Gmag(:));
+                
+                % 3. Microlettering Contrast (GLCM)
+                microtextRegion = gray_img(:, microtextLeft:microtextRight);
+                glcm = graycomatrix(microtextRegion, 'Offset', [0 1; -1 1]);
+                stats = graycoprops(glcm, {'Contrast', 'Energy'});
+                microtextContrast = stats.Contrast;
+                
+                % 4. Microlettering Energy (GLCM)
+                microtextEnergy = stats.Energy;
+                
+                % 5. Identification Mark Edge Density
+                idMarkRegion = gray_img(:, idMarkLeft:idMarkRight);
+                idMarkEdges = edge(idMarkRegion, 'Canny');
+                idMarkEdgeDensity = sum(idMarkEdges(:)) / numel(idMarkEdges);
+                
+                % 6. Security Thread Intensity Variance
+                threadIntensity = double(threadRegion(:));
+                threadIntensityVariance = var(threadIntensity);
+                
+                % 7. Watermark Intensity Mean
+                watermarkIntensity = double(watermarkRegion(:));
+                watermarkIntensityMean = mean(watermarkIntensity);
+                
+                % 8. Whole Image Entropy
+                wholeImageEntropy = entropy(gray_img);
+                
+                % Combine features into a feature vector
+                featureVector = [threadEdgeDensity, watermarkGradient, microtextContrast, ...
+                                microtextEnergy, idMarkEdgeDensity, threadIntensityVariance, ...
+                                watermarkIntensityMean, wholeImageEntropy];
+                
+                % Store the feature vector
+                allFeatures = [allFeatures; featureVector];
+                
+                % Store the image path (for reference)
+                imagePaths = [imagePaths; {imgPath}];
+                
+                % Assign label based on folder name
+                allLabels = [allLabels; categorical(labelTypes(l))];
+            end
+        end
+    end
+end
+
+% Save the new features and labels to a file
+save('currency_features_front_with_labels_new.mat', 'allFeatures', 'allLabels', 'imagePaths');
+
+disp('Feature extraction complete! Features saved to currency_features_front_with_labels_new.mat');
+
+% Step 5: Train and Evaluate the SVM Classifier with Cross-Validation
+disp('Step 5: Training and Evaluating the SVM Classifier with Cross-Validation...');
+
+% Use 5-fold cross-validation
+cv = cvpartition(allLabels, 'KFold', 5, 'Stratify', true);
+accuracies = zeros(cv.NumTestSets, 1);
+precisions = zeros(cv.NumTestSets, 1);
+recalls = zeros(cv.NumTestSets, 1);
+f1Scores = zeros(cv.NumTestSets, 1);
+
+for i = 1:cv.NumTestSets
+    % Split data into training and testing sets for this fold
+    trainIdx = training(cv, i);
+    testIdx = test(cv, i);
+    trainFeatures = allFeatures(trainIdx, :);
+    trainLabels = allLabels(trainIdx);
+    testFeatures = allFeatures(testIdx, :);
+    testLabels = allLabels(testIdx);
+    
+    % Train an SVM classifier with a linear kernel
+    svmModel = fitcsvm(trainFeatures, trainLabels, 'KernelFunction', 'linear', 'Standardize', true, 'BoxConstraint', 1);
+    
+    % Predict on the test set
+    predictedLabels = predict(svmModel, testFeatures);
+    
+    % Calculate accuracy
+    accuracies(i) = sum(predictedLabels == testLabels) / length(testLabels);
+    
+    % Compute confusion matrix
+    confMat = confusionmat(testLabels, predictedLabels);
+    
+    % Extract true positives, false positives, true negatives, false negatives
+    if strcmp(categories(testLabels(1)), 'Real')
+        TP = confMat(1, 1);
+        FN = confMat(1, 2);
+        FP = confMat(2, 1);
+        TN = confMat(2, 2);
+    else
+        TP = confMat(2, 2);
+        FN = confMat(2, 1);
+        FP = confMat(1, 2);
+        TN = confMat(1, 1);
+    end
+    
+    % Calculate precision, recall, and F1-score
+    precisions(i) = TP / (TP + FP + eps); % Add eps to avoid division by zero
+    recalls(i) = TP / (TP + FN + eps);
+    f1Scores(i) = 2 * (precisions(i) * recalls(i)) / (precisions(i) + recalls(i) + eps);
+end
+
+% Compute mean and standard deviation of metrics
+meanAccuracy = mean(accuracies) * 100;
+stdAccuracy = std(accuracies) * 100;
+meanPrecision = mean(precisions);
+meanRecall = mean(recalls);
+meanF1Score = mean(f1Scores);
+
+fprintf('Mean Cross-Validation Accuracy: %.2f%% ± %.2f%%\n', meanAccuracy, stdAccuracy);
+fprintf('Mean Precision: %.2f\n', meanPrecision);
+fprintf('Mean Recall: %.2f\n', meanRecall);
+fprintf('Mean F1-Score: %.2f\n', meanF1Score);
+
+% Train the final model on the entire dataset
+svmModel = fitcsvm(allFeatures, allLabels, 'KernelFunction', 'linear', 'Standardize', true, 'BoxConstraint', 1);
+
+% Save the trained model
+save('svm_model_new.mat', 'svmModel');
+disp('SVM classifier trained on the entire dataset and saved as svm_model_new.mat');
+
+disp('Classification complete!');
